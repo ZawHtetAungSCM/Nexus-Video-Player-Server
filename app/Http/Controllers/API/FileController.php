@@ -10,10 +10,10 @@ use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\FileResoruce;
 use App\Http\Resources\FileResource;
-use App\Http\Requests\FileStoreRequest;
 use Illuminate\Support\Facades\Storage;
 use App\Http\Requests\FileDecryptRequest;
 use App\Contracts\Services\Video\VideoServiceInterface;
+use App\Http\Requests\VideoStoreRequest;
 
 class FileController extends Controller
 {
@@ -33,14 +33,13 @@ class FileController extends Controller
         $this->videoServiceInterface = $videoService;
     }
 
-
     public function index()
     {
         $videos = Video::all();
         return FileResource::collection($videos);
     }
 
-    public function store(FileStoreRequest $request)
+    public function store(VideoStoreRequest $request)
     {
         $video = $this->videoServiceInterface->AddVideo($request);
 
@@ -62,7 +61,7 @@ class FileController extends Controller
         }
     }
 
-    public function encryptUploadFile(FileStoreRequest $request)
+    public function encryptUploadFile(VideoStoreRequest $request)
     {
         $filename = $this->videoServiceInterface->EncryptUploadFile($request);
 

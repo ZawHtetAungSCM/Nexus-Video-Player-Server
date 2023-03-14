@@ -7,6 +7,7 @@ use App\Models\Video;
 use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Storage;
 use App\Contracts\Dao\Video\VideoDaoInterface;
 
@@ -18,6 +19,8 @@ class VideoDao implements VideoDaoInterface
     protected $cipher = "aes-128-ctr";
     protected $encrypt_key = "S-C-M-MobileTeam";
     protected $chunks_size = 256 * 16;
+    protected $file_dir = "files/";
+    protected $file_dir_temp = "files/temp/";
 
     /**
      * To get All Video List
@@ -37,29 +40,39 @@ class VideoDao implements VideoDaoInterface
     public function AddVideo(Request $request)
     {
         DB::beginTransaction();
-        $dir = 'files/';
         try {
-            $filename = Storage::disk('local')->put($dir, $request->file('file'));
-            
-            $this->encryptFile($filename);
-            $fnArr = explode("/", $filename);
-            $fn = end($fnArr) . ".enc";
-            // $filename = Storage::disk('local')->put($dir, fopen($request->file('file'), 'r+'));
-            // $fnArr = explode("/", $filename);
-            // $fn = end($fnArr);
+            // $filename = Storage::disk('local')->put($this->file_dir, $request->file('file'));
+            $oriFile = $this->file_dir_temp . $request->filename;
+            $desFile = $this->file_dir . $request->filename;
+
+            Storage::move($oriFile, $desFile);
+
+            $this->encryptFile($desFile);
+            $fnArr = explode("/", $desFile);
+            $enc_filename = end($fnArr) . ".enc";
+
+            $thumbnail = $request->file('thumbnail');
+            $thumbnail_dir = 'upload/images';
+            $path = Storage::disk('public')->put($thumbnail_dir, $thumbnail);
 
             $video = Video::create([
-                'title' => "Video Testing " . rand(100, 900),
-                'file_name' => $fn,
-                'file_path' => $dir,
-                'thumbnail' => url("storage/movie_poster.jpg"),
+                'title' => $request->title,
+                'file_name' => $enc_filename,
+                'file_path' => $this->file_dir,
+                'thumbnail' => Storage::url($path),
                 'key' => $this->encrypt_key,
             ]);
-            DB::commit();
 
-            return true;
+            DB::commit();
+            return $video;
         } catch (Throwable $th) {
             DB::rollBack();
+            if (Storage::exists($this->file_dir_temp . $request->filename)) {
+                Storage::delete($this->file_dir_temp . $request->filename);
+            }
+            if (Storage::exists($this->file_dir . $request->filename)) {
+                Storage::delete($this->file_dir . $request->filename);
+            }
             return false;
         }
     }
@@ -73,9 +86,23 @@ class VideoDao implements VideoDaoInterface
     {
         $video = Video::findOrFail($id);
 
-        if (!Storage::has($video->file_path . $video->file_name)) {
+        $file =   $video->file_path . $video->file_name;
+
+        if (!Storage::has($file)) {
             return false;
         }
+
+        $filePath = $this->getFilePath($file);
+        $fileSize = Storage::size($file);
+
+        $headers = [
+            'Content-Length' => $fileSize
+        ];
+
+        /**
+         * Download (Encrypted) File
+         */
+        return response()->download($filePath, $video->file_name, $headers);
 
         /**
          * Download (Decrypted) File
@@ -84,12 +111,6 @@ class VideoDao implements VideoDaoInterface
         //     // $this->streamDecrypt('files/' . auth()->user()->id . '/' . $filename);
         //     $this->streamDecrypt($video->file_path.$video->file_name);
         // }, Str::replaceLast('.enc', '', $video->file_name));
-
-        /**
-         * Download (Encrypted) File
-         */
-        $file =  $this->getFilePath($video->file_path . $video->file_name);
-        return response()->download($file);
     }
 
     /**
@@ -97,10 +118,11 @@ class VideoDao implements VideoDaoInterface
      * @param Request $request request file inputs
      * @return String $filename
      */
-    public function EncryptUploadFile(Request $request){
+    public function EncryptUploadFile(Request $request)
+    {
         if ($request->hasFile('file') && $request->file('file')->isValid()) {
 
-            $filePath = Storage::disk('local')->put('files/temp', $request->file('file'));
+            $filePath = Storage::disk('local')->put($this->file_dir_temp, $request->file('file'));
 
             if ($filePath) {
                 $this->encryptFile($filePath);
@@ -117,9 +139,10 @@ class VideoDao implements VideoDaoInterface
      * @param $filename for download
      * @return response->download of Video File
      */
-    public function DownloadEncryptedFile($filename){
+    public function DownloadEncryptedFile($filename)
+    {
         try {
-            $encryptFile =  Storage::path('files/temp/' . $filename);
+            $encryptFile =  Storage::path($this->file_dir_temp . $filename);
             return response()->download($encryptFile)->deleteFileAfterSend(true);
         } catch (Throwable $th) {
             return false;
@@ -131,14 +154,15 @@ class VideoDao implements VideoDaoInterface
      * @param Request $request request file inputs
      * @return String $filename
      */
-    public function DecryptUploadFile(Request $request){
+    public function DecryptUploadFile(Request $request)
+    {
         //Check Enc file ?
         $OriFileExt = $request->file('file')->getClientOriginalExtension();
 
         if ($OriFileExt == "enc" && $request->hasFile('file') && $request->file('file')->isValid()) {
 
             $file_name = time() . '-' . $request->file('file')->getClientOriginalName();
-            $file_path = $request->file('file')->storeAs('files/temp', $file_name);
+            $file_path = $request->file('file')->storeAs($this->file_dir_temp, $file_name);
 
             if ($this->decryptFile($file_path)) {
                 $decryptFile = Str::replaceLast('.enc', '', $file_name);
@@ -155,9 +179,10 @@ class VideoDao implements VideoDaoInterface
      * @param $filename for download
      * @return response->download of Video File
      */
-    public function DownloadDecryptedFile($filename){
+    public function DownloadDecryptedFile($filename)
+    {
         try {
-            $decryptFile =  Storage::path('files/temp/' . $filename);
+            $decryptFile =  Storage::path($this->file_dir_temp . $filename);
             return response()->download($decryptFile)->deleteFileAfterSend(true);
         } catch (Throwable $th) {
             return false;

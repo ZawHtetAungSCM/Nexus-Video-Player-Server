@@ -17,7 +17,7 @@ class FileResource extends JsonResource
         return [
             'id' => $this->id,
             'title' => $this->title,
-            'thumbnail' => $this->thumbnail,
+            'thumbnail' => env('APP_URL').$this->thumbnail,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

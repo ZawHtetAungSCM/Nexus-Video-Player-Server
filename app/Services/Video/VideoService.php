@@ -43,8 +43,8 @@ class VideoService implements VideoServiceInterface
      */
     public function AddVideo(Request $request)
     {
-        $video = $this->videoDao->AddVideo($request);
-        return $video;
+        $response = $this->videoDao->AddVideo($request);
+        return $response;
     }
 
     /**
